@@ -1,6 +1,21 @@
 #include <Arduino.h>
 #include "pin.h"
 
+#define BACKGROUND_TASK_PRIORITY 0
+#define BACKGROUND_TASK_CORE 0
+
+/**
+ * This task is used to run all background process
+ */
+void backgroundTask(void *pvParameters)
+{
+  while (1)
+  {
+    digitalWrite(PIN_LED, !digitalRead(PIN_LED));
+    delay(500);
+  }
+}
+
 void setup()
 {
   // CNY70 pin init
@@ -23,10 +38,19 @@ void setup()
   // OTHER pin init
   pinMode(PIN_LED, OUTPUT);
   pinMode(PIN_BUTTON, INPUT_PULLUP);
+
+  // RTOS init
+
+  xTaskCreatePinnedToCore(
+      backgroundTask,           /* Function to implement the task */
+      "coreTask",               /* Name of the task */
+      10000,                    /* Stack size in words */
+      NULL,                     /* Task input parameter */
+      BACKGROUND_TASK_PRIORITY, /* Priority of the task */
+      NULL,                     /* Task handle. */
+      BACKGROUND_TASK_CORE);    /* Core where the task should run */
 }
 
 void loop()
 {
-  digitalWrite(PIN_LED, !digitalRead(PIN_LED));
-  delay(500);
 }
