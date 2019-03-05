@@ -16,7 +16,7 @@
 
 // ENDSTOP
 #define PIN_ENDSTOP_1   33
-#define PIN_ENDSTOP_2   16
+//#define PIN_ENDSTOP_2   16    // rerouted as PIN_BUTTON
 
 // BATTERY
 #define PIN_VBAT        13
@@ -35,6 +35,6 @@
 
 // MISCELLANEOUS
 #define PIN_LED         17
-#define PIN_BUTTON      5
+#define PIN_BUTTON      16  // 5
 
 #endif
