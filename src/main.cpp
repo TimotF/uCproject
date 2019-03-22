@@ -18,6 +18,9 @@
 #define PWM_FREQUENCY 500
 #define PWM_RESOLUTION 8
 
+#define BRAKE_SPEED 220
+#define TRAVEL_SPEED 70
+
 int s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0, s6 = 0, s7 = 0, s8 = 0, s9 = 0, s10 = 0, endstop = 0;
 
 /**
@@ -192,26 +195,63 @@ void disableMotors()
   digitalWrite(PIN_MOT_SLEEP, LOW);
 }
 
+enum Sens
+{
+  LEFT,
+  RIGHT,
+  STRAIGHT
+};
+
 void loop()
 {
-  enableSensors();
   bool but = false;
+  enableSensors();
   while (!but)
   {
     but = !digitalRead(PIN_BUTTON);
     delay(1);
   }
-
   enableMotors();
+  while (1)
+  {
+    bool obstacle = false;
+    forward(70);
+    straight();
+    while (!obstacle)
+    {
+      if (s1 > 4000 || s2 > 4000)
+      {
+        left();
+        obstacle = true;
+      }
+      if (s6 > 4000 || s7 > 4000 || !endstop)
+      {
+        right();
+        obstacle = true;
+      }
+    }
+    //disableMotors();
 
-  forward(128);
-  straight();
+    backward(BRAKE_SPEED); //FORWARD STOP
+    delay(100);
+    backward(TRAVEL_SPEED); // BACKWARD TRAVEL
+    uint32_t entry = millis();
+    obstacle = false;
+    while (millis() - entry < 1000)
+    {
+      if (s4 > 4000 || s5 > 4000 || s9 > 4000 || s10 > 4000)
+      {
+        obstacle = true;
+        break;
+      }
+    }
+    forward(BRAKE_SPEED); // BACKWARD STOP
+    delay(100);
+  }
+  disableMotors();
+  disableSensors();
   delay(1000);
-
-  backward(128);
-  right();
-  delay(1000);
-
+  /*
   forward(128);
   straight();
   delay(1000);
@@ -223,6 +263,5 @@ void loop()
   straight();
   stop();
 
-  delay(1000);
-  disableMotors();
+  delay(1000);*/
 }
