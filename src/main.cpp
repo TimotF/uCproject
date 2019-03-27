@@ -21,7 +21,7 @@
 #define BRAKE_SPEED 220
 #define TRAVEL_SPEED 70
 
-int s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0, s6 = 0, s7 = 0, s8 = 0, s9 = 0, s10 = 0, endstop = 0;
+int s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0, s6 = 0, s7 = 0, s8 = 0, s9 = 0, s10 = 0, endstopL = 0, endstopR = 0;
 
 /**
  * This task is used to run all background process
@@ -53,9 +53,10 @@ void sensorsTask(void *pvParameters)
     s8 = analogRead(PIN_CNY70_8);
     s9 = analogRead(PIN_CNY70_9);
     s10 = analogRead(PIN_CNY70_10);
-    endstop = digitalRead(PIN_ENDSTOP_1);
+    endstopL = digitalRead(PIN_ENDSTOP_1);
+    endstopR = digitalRead(PIN_ENDSTOP_2);
 
-    LOG("Sensors : s1=%d,\ts2=%d,\ts3=%d,\ts4=%d,\ts5=%d,\ts6=%d,\ts7=%d,\ts8=%d,\ts9=%d,\ts10=%d,\tendstop=%d\n", s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, endstop);
+    LOG("Sensors : s1=%d,\ts2=%d,\ts3=%d,\ts4=%d,\ts5=%d,\ts6=%d,\ts7=%d,\ts8=%d,\ts9=%d,\ts10=%d,\tendstopL=%d,\tendstopL=%d\n", s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, endstopL, endstopR);
   }
 }
 
@@ -100,6 +101,7 @@ void setup()
 
   // ENDSTOP pin init
   pinMode(PIN_ENDSTOP_1, INPUT_PULLUP);
+  pinMode(PIN_ENDSTOP_2, INPUT_PULLUP);
 
   // MOTOR pin init
   pinMode(PIN_MOT_SLEEP, OUTPUT);
@@ -219,12 +221,12 @@ void loop()
     straight();
     while (!obstacle)
     {
-      if (s1 > 4000 || s2 > 4000)
+      if (s1 > 4000 || s2 > 4000 || !endstopL)
       {
         left();
         obstacle = true;
       }
-      if (s6 > 4000 || s7 > 4000 || !endstop)
+      if (s6 > 4000 || s7 > 4000 || !endstopR)
       {
         right();
         obstacle = true;

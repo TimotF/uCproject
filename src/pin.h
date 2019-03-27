@@ -16,10 +16,10 @@
 
 // ENDSTOP
 #define PIN_ENDSTOP_1   33
-//#define PIN_ENDSTOP_2   16    // rerouted as PIN_BUTTON
+#define PIN_ENDSTOP_2   13    
 
 // BATTERY
-#define PIN_VBAT        13
+//#define PIN_VBAT        13    // rerouted as PIN_ENDSTOP_2
 
 // I2C
 #define PIN_SCL         22
