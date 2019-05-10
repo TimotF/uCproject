@@ -2,6 +2,9 @@
 #include "pin.h"
 #include <Wire.h>
 
+#include "I2Cdev.h"
+#include "HMC5883L.h"
+
 #define LOG(f_, ...)                    \
   {                                     \
     Serial.printf("[%ld] ", millis());  \
@@ -19,9 +22,53 @@
 #define PWM_RESOLUTION 8
 
 #define BRAKE_SPEED 220
+#define BRAKE_DELAY 100
 #define TRAVEL_SPEED 70
+#define EVENT_DELAY 1000
 
-int s1 = 0, s2 = 0, s3 = 0, s4 = 0, s5 = 0, s6 = 0, s7 = 0, s8 = 0, s9 = 0, s10 = 0, endstopL = 0, endstopR = 0;
+enum Direction
+{
+  FORWARD,
+  FORWARD_LEFT,
+  FORWARD_RIGHT,
+  BACKWARD,
+  BACKWARD_LEFT,
+  BACKWARD_RIGHT
+};
+
+enum Event
+{
+  LINE_FRONT_LEFT,
+  LINE_FRONT_RIGHT,
+  LINE_REAR_LEFT,
+  LINE_REAR_RIGHT,
+  WALL_FRONT_LEFT,
+  WALL_FRONT_RIGHT,
+  WALL_SIDE_LEFT,
+  WALL_SIDE_RIGHT,
+  NONE
+};
+
+Direction dir = FORWARD;
+Event event = NONE;
+uint32_t timerEvent = 0;
+
+int sLFL = 0,      // sensor Left Front Left
+    sLFR = 0,      // sensor Left Front Right
+    sL = 0,        // sensor Left
+    sLR = 0,       // sensor Left Rear
+    sRFL = 0,      // sensor Right Front Left
+    sRFR = 0,      // sensor Right Front Right
+    sR = 0,        // sensor Right
+    sRR = 0,       // sensor Right Rear
+    endstopLF = 0, // endstop Left Front
+    endstopRF = 0, // endstop Right Front
+    endstopLS = 0, // endstop Left Side
+    endstopRS = 0; // endstop Right Side
+
+HMC5883L mag;
+
+int16_t mx, my, mz;
 
 /**
  * This task is used to run all background process
@@ -43,20 +90,65 @@ void sensorsTask(void *pvParameters)
   while (1)
   {
     delay(10);
-    s1 = analogRead(PIN_CNY70_1);
-    s2 = analogRead(PIN_CNY70_2);
-    s3 = analogRead(PIN_CNY70_3);
-    s4 = analogRead(PIN_CNY70_4);
-    s5 = analogRead(PIN_CNY70_5);
-    s6 = analogRead(PIN_CNY70_6);
-    s7 = analogRead(PIN_CNY70_7);
-    s8 = analogRead(PIN_CNY70_8);
-    s9 = analogRead(PIN_CNY70_9);
-    s10 = analogRead(PIN_CNY70_10);
-    endstopL = digitalRead(PIN_ENDSTOP_1);
-    endstopR = digitalRead(PIN_ENDSTOP_2);
+    sLFL = analogRead(PIN_CNY70_2);
+    sLFR = analogRead(PIN_CNY70_1);
+    sL = analogRead(PIN_CNY70_3);
+    sLR = analogRead(PIN_CNY70_4);
+    sRFL = analogRead(PIN_CNY70_7);
+    sRFR = analogRead(PIN_CNY70_6);
+    sR = analogRead(PIN_CNY70_8);
+    sRR = analogRead(PIN_CNY70_10);
+    endstopLF = !digitalRead(PIN_ENDSTOP_FRONT_LEFT);
+    endstopRF = !digitalRead(PIN_ENDSTOP_FRONT_RIGHT);
+    endstopLS = !digitalRead(PIN_ENDSTOP_SIDE_LEFT);
+    endstopRS = !digitalRead(PIN_ENDSTOP_SIDE_RIGHT);
 
-    LOG("Sensors : s1=%d,\ts2=%d,\ts3=%d,\ts4=%d,\ts5=%d,\ts6=%d,\ts7=%d,\ts8=%d,\ts9=%d,\ts10=%d,\tendstopL=%d,\tendstopL=%d\n", s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, endstopL, endstopR);
+    // Events. Less prioritary first
+    if (endstopLF)
+      event = WALL_FRONT_LEFT;
+
+    if (endstopRF)
+      event = WALL_FRONT_RIGHT;
+
+    if (endstopLS)
+      event = WALL_SIDE_LEFT;
+
+    if (endstopRS)
+      event = WALL_SIDE_RIGHT;
+
+    if (sLR > 4000)
+      event = LINE_REAR_LEFT;
+
+    if (sRR > 4000)
+      event = LINE_REAR_RIGHT;
+
+    if (sLFL > 4000 || sLFR > 4000 || sL > 4000)
+      event = LINE_FRONT_LEFT;
+
+    if (sRFL > 4000 || sRFR > 4000 || sR > 4000)
+      event = LINE_FRONT_RIGHT;
+
+     // LOG("Sensors : \nsLFL = \t%d\nsLFR = \t%d\nsL = \t%d\nsLR = \t%d\nsRFL = \t%d\nsRFR = \t%d\nsR = \t%d\nsRR = \t%d\nendstopLF = %d\nendstopRF = %d\nendstopLS = %d\nendstopRS = %d\n", sLFL, sLFR, sL, sLR, sRFL, sRFR, sR, sRR, endstopLF, endstopRF, endstopLS, endstopRS);
+#if 0
+   // read raw heading measurements from device
+    mag.getHeading(&mx, &my, &mz);
+
+    // display tab-separated gyro x/y/z values
+    Serial.print("mag:\t");
+    Serial.print(mx);
+    Serial.print("\t");
+    Serial.print(my);
+    Serial.print("\t");
+    Serial.print(mz);
+    Serial.print("\t");
+
+    // To calculate heading in degrees. 0 degree indicates North
+    float heading = atan2(my, mx);
+    if (heading < 0)
+      heading += 2 * M_PI;
+    Serial.print("heading:\t");
+    Serial.println(heading * 180 / M_PI);
+#endif
   }
 }
 
@@ -69,39 +161,20 @@ void setup()
 
   // I2C init
   Wire.begin();
-
-  for (uint8_t address = 1; address < 127; address++)
-  {
-    // The i2c_scanner uses the return value of
-    // the Write.endTransmisstion to see if
-    // a device did acknowledge to the address.
-    Wire.beginTransmission(address);
-    uint8_t error = Wire.endTransmission();
-
-    if (error == 0)
-    {
-      Serial.print("I2C device found at address 0x");
-      if (address < 16)
-        Serial.print("0");
-      Serial.print(address, HEX);
-      Serial.println("  !");
-    }
-    else if (error == 4)
-    {
-      Serial.print("Unknown error at address 0x");
-      if (address < 16)
-        Serial.print("0");
-      Serial.println(address, HEX);
-    }
-  }
+  mag.initialize();
+  // verify connection
+  Serial.println("Testing device connections...");
+  Serial.println(mag.testConnection() ? "HMC5883L connection successful" : "HMC5883L connection failed");
 
   // CNY70 pin init
   pinMode(PIN_EN_3V3, OUTPUT);
   digitalWrite(PIN_EN_3V3, LOW);
 
   // ENDSTOP pin init
-  pinMode(PIN_ENDSTOP_1, INPUT_PULLUP);
-  pinMode(PIN_ENDSTOP_2, INPUT_PULLUP);
+  pinMode(PIN_ENDSTOP_FRONT_LEFT, INPUT_PULLUP);
+  pinMode(PIN_ENDSTOP_SIDE_LEFT, INPUT_PULLUP);
+  pinMode(PIN_ENDSTOP_FRONT_RIGHT, INPUT_PULLUP);
+  pinMode(PIN_ENDSTOP_SIDE_RIGHT, INPUT_PULLUP);
 
   // MOTOR pin init
   pinMode(PIN_MOT_SLEEP, OUTPUT);
@@ -197,13 +270,6 @@ void disableMotors()
   digitalWrite(PIN_MOT_SLEEP, LOW);
 }
 
-enum Sens
-{
-  LEFT,
-  RIGHT,
-  STRAIGHT
-};
-
 void loop()
 {
   bool but = false;
@@ -216,54 +282,124 @@ void loop()
   enableMotors();
   while (1)
   {
-    bool obstacle = false;
-    forward(70);
-    straight();
-    while (!obstacle)
-    {
-      if (s1 > 4000 || s2 > 4000 || !endstopL)
-      {
-        left();
-        obstacle = true;
-      }
-      if (s6 > 4000 || s7 > 4000 || !endstopR)
-      {
-        right();
-        obstacle = true;
-      }
-    }
-    //disableMotors();
 
-    backward(BRAKE_SPEED); //FORWARD STOP
-    delay(100);
-    backward(TRAVEL_SPEED); // BACKWARD TRAVEL
-    uint32_t entry = millis();
-    obstacle = false;
-    while (millis() - entry < 1000)
+    switch (dir)
     {
-      if (s4 > 4000 || s5 > 4000 || s9 > 4000 || s10 > 4000)
+    case FORWARD:
+    {
+      straight();
+      forward(TRAVEL_SPEED);
+
+      switch (event)
       {
-        obstacle = true;
+      case LINE_FRONT_LEFT:
+      case WALL_FRONT_LEFT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_LEFT;
+        timerEvent = millis();
         break;
       }
+
+      case LINE_FRONT_RIGHT:
+      case WALL_FRONT_RIGHT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_RIGHT;
+        timerEvent = millis();
+        break;
+      }
+
+      case WALL_SIDE_LEFT:
+      {
+        dir = FORWARD_RIGHT;
+        timerEvent = millis();
+        break;
+      }
+
+      case WALL_SIDE_RIGHT:
+      {
+        dir = FORWARD_LEFT;
+        timerEvent = millis();
+        break;
+      }
+      }
+      break;
     }
-    forward(BRAKE_SPEED); // BACKWARD STOP
-    delay(100);
+
+    case FORWARD_LEFT:
+    case FORWARD_RIGHT:
+    {
+      if (millis() - timerEvent > EVENT_DELAY)
+      {
+        straight();
+        dir = FORWARD;
+        event = NONE;
+        break;
+      }
+      if (dir == FORWARD_LEFT)
+        left();
+      else
+        right();
+
+      switch (event)
+      {
+      case LINE_FRONT_LEFT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_LEFT;
+        timerEvent = millis();
+        break;
+      }
+
+      case LINE_FRONT_RIGHT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_RIGHT;
+        timerEvent = millis();
+        break;
+      }
+      }
+      break;
+    }
+
+    case BACKWARD_LEFT:
+    case BACKWARD_RIGHT:
+    {
+      if (millis() - timerEvent > EVENT_DELAY)
+      {
+        forward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        straight();
+        dir = FORWARD;
+        event = NONE;
+        break;
+      }
+      backward(TRAVEL_SPEED);
+      if (dir == BACKWARD_LEFT)
+        left();
+      else
+        right();
+
+      switch (event)
+      {
+      case LINE_REAR_LEFT:
+      case LINE_REAR_RIGHT:
+      {
+        forward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        straight();
+        dir = FORWARD;
+        break;
+      }
+      }
+      break;
+    }
+    }
   }
-  disableMotors();
-  disableSensors();
-  delay(1000);
-  /*
-  forward(128);
-  straight();
-  delay(1000);
 
-  backward(128);
-  left();
-  delay(1000);
-
-  straight();
-  stop();
-
-  delay(1000);*/
 }
