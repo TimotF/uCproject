@@ -23,8 +23,12 @@
 
 #define BRAKE_SPEED 220
 #define BRAKE_DELAY 100
-#define TRAVEL_SPEED 70
-#define EVENT_DELAY 1000
+#define FORWARD_TRAVEL_SPEED 70
+#define FORWARD_LEFT_TRAVEL_SPEED 70
+#define BACKWARD_TRAVEL_SPEED 90
+#define EVENT_DELAY 700
+#define FORWARD_DELAY 2000
+#define LAST_EVENT_DELAY 3000
 
 enum Direction
 {
@@ -33,7 +37,9 @@ enum Direction
   FORWARD_RIGHT,
   BACKWARD,
   BACKWARD_LEFT,
-  BACKWARD_RIGHT
+  BACKWARD_RIGHT,
+  CORNER_RIGHT,
+  CORNER_LEFT
 };
 
 enum Event
@@ -50,8 +56,11 @@ enum Event
 };
 
 Direction dir = FORWARD;
+Direction cornerDir = BACKWARD;
 Event event = NONE;
+Event lastEvent = NONE;
 uint32_t timerEvent = 0;
+uint32_t timerLastEvent = 0;
 
 int sLFL = 0,      // sensor Left Front Left
     sLFR = 0,      // sensor Left Front Right
@@ -128,7 +137,7 @@ void sensorsTask(void *pvParameters)
     if (sRFL > 4000 || sRFR > 4000 || sR > 4000)
       event = LINE_FRONT_RIGHT;
 
-     // LOG("Sensors : \nsLFL = \t%d\nsLFR = \t%d\nsL = \t%d\nsLR = \t%d\nsRFL = \t%d\nsRFR = \t%d\nsR = \t%d\nsRR = \t%d\nendstopLF = %d\nendstopRF = %d\nendstopLS = %d\nendstopRS = %d\n", sLFL, sLFR, sL, sLR, sRFL, sRFR, sR, sRR, endstopLF, endstopRF, endstopLS, endstopRS);
+      // LOG("Sensors : \nsLFL = \t%d\nsLFR = \t%d\nsL = \t%d\nsLR = \t%d\nsRFL = \t%d\nsRFR = \t%d\nsR = \t%d\nsRR = \t%d\nendstopLF = %d\nendstopRF = %d\nendstopLS = %d\nendstopRS = %d\n", sLFL, sLFR, sL, sLR, sRFL, sRFR, sR, sRR, endstopLF, endstopRF, endstopLS, endstopRS);
 #if 0
    // read raw heading measurements from device
     mag.getHeading(&mx, &my, &mz);
@@ -184,6 +193,7 @@ void setup()
   pinMode(PIN_MOT_STEER2, OUTPUT);
   pinMode(PIN_MOT_PROP1, OUTPUT);
   pinMode(PIN_MOT_PROP2, OUTPUT);
+  digitalWrite(PIN_MOT_SLEEP, LOW);
   ledcSetup(CH_MOT_PROP1, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcSetup(CH_MOT_PROP2, PWM_FREQUENCY, PWM_RESOLUTION);
   ledcAttachPin(PIN_MOT_PROP1, CH_MOT_PROP1);
@@ -283,32 +293,85 @@ void loop()
   while (1)
   {
 
+    if (millis() - timerLastEvent > LAST_EVENT_DELAY)
+    {
+      lastEvent = NONE;
+      timerLastEvent = millis();
+    }
+
     switch (dir)
     {
     case FORWARD:
     {
       straight();
-      forward(TRAVEL_SPEED);
+      if (millis() - timerEvent < 100)
+        forward(150);
+      else
+        forward(FORWARD_TRAVEL_SPEED);
+
+      if (millis() - timerEvent > FORWARD_DELAY)
+      {
+        dir = FORWARD_LEFT;
+        timerEvent = millis();
+        event = NONE;
+        break;
+      }
 
       switch (event)
       {
       case LINE_FRONT_LEFT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_LEFT;
+        timerEvent = millis();
+        lastEvent = event;
+        timerLastEvent = millis();
+        break;
+      }
+
       case WALL_FRONT_LEFT:
       {
         backward(BRAKE_SPEED); //BREAKING
         delay(BRAKE_DELAY);
         dir = BACKWARD_LEFT;
         timerEvent = millis();
+        lastEvent = event;
+        timerLastEvent = millis();
         break;
       }
 
       case LINE_FRONT_RIGHT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_RIGHT;
+        timerEvent = millis();
+        if (lastEvent == WALL_FRONT_LEFT)
+        {
+          dir = CORNER_LEFT;
+          cornerDir = BACKWARD;
+          timerEvent = millis();
+        }
+        lastEvent = event;
+        timerLastEvent = millis();
+        break;
+      }
+
       case WALL_FRONT_RIGHT:
       {
         backward(BRAKE_SPEED); //BREAKING
         delay(BRAKE_DELAY);
         dir = BACKWARD_RIGHT;
         timerEvent = millis();
+        if (lastEvent == LINE_FRONT_LEFT)
+        {
+          dir = CORNER_RIGHT;
+          cornerDir = BACKWARD;
+          timerEvent = millis();
+        }
+        lastEvent = event;
+        timerLastEvent = millis();
         break;
       }
 
@@ -330,19 +393,101 @@ void loop()
     }
 
     case FORWARD_LEFT:
+    {
+      if (millis() - timerLastEvent > LAST_EVENT_DELAY)
+      {
+        lastEvent = NONE;
+        timerLastEvent = millis();
+      }
+      forward(FORWARD_LEFT_TRAVEL_SPEED);
+      left();
+
+      switch (event)
+      {
+      case LINE_FRONT_LEFT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_LEFT;
+        timerEvent = millis();
+        if (lastEvent == WALL_FRONT_RIGHT)
+        {
+          dir = CORNER_RIGHT;
+          cornerDir = BACKWARD;
+          timerEvent = millis();
+        }
+        lastEvent = event;
+        timerLastEvent = millis();
+        break;
+      }
+
+      case WALL_FRONT_LEFT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_LEFT;
+        timerEvent = millis();
+        lastEvent = event;
+        timerLastEvent = millis();
+        break;
+      }
+
+      case LINE_FRONT_RIGHT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_RIGHT;
+        timerEvent = millis();
+        if (lastEvent == WALL_FRONT_LEFT)
+        {
+          dir = CORNER_LEFT;
+          cornerDir = BACKWARD;
+          timerEvent = millis();
+        }
+        lastEvent = event;
+        timerLastEvent = millis();
+        break;
+      }
+
+      case WALL_FRONT_RIGHT:
+      {
+        backward(BRAKE_SPEED); //BREAKING
+        delay(BRAKE_DELAY);
+        dir = BACKWARD_RIGHT;
+        timerEvent = millis();
+        lastEvent = event;
+        timerLastEvent = millis();
+        break;
+      }
+
+      case WALL_SIDE_LEFT:
+      {
+        dir = FORWARD_RIGHT;
+        timerEvent = millis();
+        break;
+      }
+
+      case WALL_SIDE_RIGHT:
+      {
+        dir = FORWARD_LEFT;
+        timerEvent = millis();
+        break;
+      }
+      }
+      break;
+    }
+
     case FORWARD_RIGHT:
     {
       if (millis() - timerEvent > EVENT_DELAY)
       {
         straight();
         dir = FORWARD;
+        timerEvent = millis();
         event = NONE;
         break;
       }
-      if (dir == FORWARD_LEFT)
-        left();
-      else
-        right();
+      right();
 
       switch (event)
       {
@@ -376,10 +521,11 @@ void loop()
         delay(BRAKE_DELAY);
         straight();
         dir = FORWARD;
+        timerEvent = millis();
         event = NONE;
         break;
       }
-      backward(TRAVEL_SPEED);
+      backward(BACKWARD_TRAVEL_SPEED);
       if (dir == BACKWARD_LEFT)
         left();
       else
@@ -394,12 +540,112 @@ void loop()
         delay(BRAKE_DELAY);
         straight();
         dir = FORWARD;
+        timerEvent = millis();
         break;
       }
       }
       break;
     }
+
+    case CORNER_RIGHT:
+    case CORNER_LEFT:
+    {
+      switch (cornerDir)
+      {
+      case FORWARD:
+      {
+        if (millis() - timerEvent < 100)
+        forward(150);
+      else
+        forward(FORWARD_TRAVEL_SPEED);
+ 
+        if (dir == CORNER_LEFT)
+          right();
+        else
+          left();
+
+        switch (event)
+        {
+        case LINE_FRONT_LEFT:
+        {
+          backward(BRAKE_SPEED); //BREAKING
+          delay(BRAKE_DELAY);
+          if (dir == CORNER_LEFT)
+            dir = BACKWARD_LEFT; // go back to normal mode
+          else
+            cornerDir = BACKWARD;
+
+          timerEvent = millis();
+          break;
+        }
+
+        case WALL_FRONT_LEFT:
+        case WALL_FRONT_RIGHT:
+        {
+          backward(BRAKE_SPEED); //BREAKING
+          delay(BRAKE_DELAY);
+          cornerDir = BACKWARD;
+          timerEvent = millis();
+
+          break;
+        }
+
+        case LINE_FRONT_RIGHT:
+        {
+          backward(BRAKE_SPEED); //BREAKING
+          delay(BRAKE_DELAY);
+          if (dir == CORNER_RIGHT)
+            dir = BACKWARD_RIGHT; // go back to normal mode
+          else
+            cornerDir = BACKWARD;
+
+          timerEvent = millis();
+          break;
+        }
+        }
+        break;
+      }
+
+      case BACKWARD:
+      {
+        if (millis() - timerEvent > EVENT_DELAY)
+        {
+          forward(BRAKE_SPEED); //BREAKING
+          delay(BRAKE_DELAY);
+          cornerDir = FORWARD;
+          timerEvent = millis();
+          event = NONE;
+          break;
+        }
+        backward(BACKWARD_TRAVEL_SPEED);
+        if (dir == CORNER_LEFT)
+          left();
+        else
+          right();
+
+        switch (event)
+        {
+        case LINE_REAR_LEFT:
+        case LINE_REAR_RIGHT:
+        {
+          forward(BRAKE_SPEED); //BREAKING
+          delay(BRAKE_DELAY);
+          straight();
+          cornerDir = FORWARD;
+          timerEvent = millis();
+          break;
+        }
+        }
+        break;
+      }
+
+      default:
+        dir = FORWARD;
+        timerEvent = millis();
+        break;
+      }
+      break;
+    }
     }
   }
-
 }
