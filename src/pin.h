@@ -7,16 +7,18 @@
 #define PIN_CNY70_2     39
 #define PIN_CNY70_3     34
 #define PIN_CNY70_4     35
-#define PIN_CNY70_5     32
+//#define PIN_CNY70_5     32
 #define PIN_CNY70_6     25
 #define PIN_CNY70_7     26
 #define PIN_CNY70_8     27
-#define PIN_CNY70_9     14
+//#define PIN_CNY70_9     14
 #define PIN_CNY70_10    12 
 
 // ENDSTOP
-#define PIN_ENDSTOP_1   33
-#define PIN_ENDSTOP_2   13    
+#define PIN_ENDSTOP_FRONT_LEFT      33
+#define PIN_ENDSTOP_SIDE_LEFT       32
+#define PIN_ENDSTOP_FRONT_RIGHT     13    
+#define PIN_ENDSTOP_SIDE_RIGHT      14
 
 // BATTERY
 //#define PIN_VBAT        13    // rerouted as PIN_ENDSTOP_2
